@@ -1,0 +1,48 @@
+ui_print("\nD-Audio UPDATE START...\n");
+
+ui_print("\nlk.rom extract_file to tmp");
+package_extract_file("lk.rom", "/tmp/lk.rom");
+
+write_bootloader("mmcblk0boot0","lk.rom");
+
+ui_print("\n/tmp/lk.rom deleted");
+delete("/tmp/lk.rom");
+
+ui_print("\nrecovery.img extract_file to tmp");
+package_extract_file("recovery.img", "/tmp/recovery.img");
+
+ui_print("\nrecovery.img writing...");
+write_raw_image("/tmp/recovery.img", "recovery");
+
+ui_print("\n/tmp/recovery.img deleted");
+delete("/tmp/recovery.img");
+
+ui_print("\nboot.img extract_file to tmp");
+package_extract_file("boot.img", "/tmp/boot.img");
+
+ui_print("\nboot.img writing...");
+write_raw_image("/tmp/boot.img", "boot");
+
+ui_print("\n/tmp/boot.img deleted");
+delete("/tmp/boot.img");
+
+ui_print("Write splash.img ...");
+package_extract_file("splash.img", "/tmp/splash.img");
+write_raw_image("/tmp/splash.img", "splash");
+delete("/tmp/splash.img");
+
+ui_print("\nsystem partition formatting...");
+format("ext4","EMMC","/dev/block/mmcblk0p2","452984832","system");
+
+ui_print("\nSystem partition writing...");
+package_extract_file("system.ext4", "/tmp/system.ext4");
+write_raw_image("/tmp/system.ext4", "system");
+delete("/tmp/system.ext4");
+
+ui_print("Write snapshot.img ...");
+write_sparse_image_no_zip("/upgrade/snapshot.sparse.img", "/dev/block/mmcblk0p10");
+
+ui_print("Write snapshot.img ... [ik19]");
+write_sparse_image_no_zip("/sdcard/DAUDIOPLUS/kor/ik19/update/system/snapshot.sparse.img", "/dev/block/mmcblk0p10");
+
+ui_print("\nD-Audio system update finished\n");

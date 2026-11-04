@@ -1,0 +1,39 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: splash.img
+SHA1-Digest: H8WojzFqWBcdYkKCPWKqVF3hbx4=
+
+Name: boot.img
+SHA1-Digest: Xi2iilhCtVv9TH2JvdEBzpoxpGQ=
+
+Name: romcopy/padding.img
+SHA1-Digest: DQ5Hk49uABZuc1JzLd+3xhD0TbI=
+
+Name: lk.rom
+SHA1-Digest: 8EzKWXwcusumxwTHwDKJG5YVgoQ=
+
+Name: META-INF/com/google/android/updater-script
+SHA1-Digest: xEEyuVafXXK9tb8pzrMJ2cUmxDk=
+
+Name: META-INF/com/android/otacert
+SHA1-Digest: KuL6CbCfSmljbFyYxp3Bzoltz/M=
+
+Name: res/keys
+SHA1-Digest: 326ZQtIAxqzDaI+5KmMaWqPEFsY=
+
+Name: romcopy/emmc_header.rom
+SHA1-Digest: xnK1Jbf7hPCgJr+bAWBuQctHXXw=
+
+Name: system.ext4
+SHA1-Digest: Bfi0j4xmsQyEORooiCQHC/zCTeY=
+
+Name: recovery.img
+SHA1-Digest: /zG9ZPlXwW0u5iKsDkX07HnfU1k=
+
+Name: META-INF/com/google/android/update-binary
+SHA1-Digest: oS4wqNAkgrYH21NUzmdppj84CpI=
+
+Name: romcopy/dram.rom
+SHA1-Digest: dm2UbHZH8Qku3IKii0FvT2YWNQA=
+
