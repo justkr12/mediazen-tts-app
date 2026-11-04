@@ -1,0 +1,5 @@
+com.mediazen.ttsapp.test.app-updated_navigation_xml-0 D:\tts_app\app\build\generated\updated_navigation_xml\debugAndroidTest
+com.mediazen.ttsapp.test.app-packageDebugAndroidTestResources-1 D:\tts_app\app\build\intermediates\incremental\debugAndroidTest\packageDebugAndroidTestResources\merged.dir
+com.mediazen.ttsapp.test.app-packageDebugAndroidTestResources-2 D:\tts_app\app\build\intermediates\incremental\debugAndroidTest\packageDebugAndroidTestResources\stripped.dir
+com.mediazen.ttsapp.test.app-debugAndroidTest-3 D:\tts_app\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources
+gradleHome-0 C:\Users\Root\.gradle

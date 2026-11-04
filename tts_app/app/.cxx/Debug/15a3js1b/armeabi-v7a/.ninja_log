@@ -1,0 +1,11 @@
+# ninja log v5
+1	1070	8108957419621182	CMakeFiles/tts_jni.dir/tts_jni.cpp.o	56224c4714770095
+1088	1195	8108957420900800	D:/tts_app/app/build/intermediates/cxx/Debug/15a3js1b/obj/armeabi-v7a/libtts_jni.so	aef8b237c3e6d577
+5	846	8108963767846755	CMakeFiles/tts_jni.dir/tts_jni.cpp.o	56224c4714770095
+846	948	8108963768894841	D:/tts_app/app/build/intermediates/cxx/Debug/15a3js1b/obj/armeabi-v7a/libtts_jni.so	aef8b237c3e6d577
+5	773	8108965843213596	CMakeFiles/tts_jni.dir/tts_jni.cpp.o	56224c4714770095
+774	864	8108965844452347	D:/tts_app/app/build/intermediates/cxx/Debug/15a3js1b/obj/armeabi-v7a/libtts_jni.so	aef8b237c3e6d577
+0	9	0	clean	671b304621c3a2e3
+0	9	0	clean	671b304621c3a2e3
+6	1131	8109160556203471	CMakeFiles/tts_jni.dir/tts_jni.cpp.o	56224c4714770095
+1132	1290	8109160557827910	D:/tts_app/app/build/intermediates/cxx/Debug/15a3js1b/obj/armeabi-v7a/libtts_jni.so	aef8b237c3e6d577

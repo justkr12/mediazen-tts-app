@@ -1,0 +1,9 @@
+lib/armeabi-v7a/libtts_module.so->Project
+lib/armeabi-v7a/libvt_Dic_module.so->Project
+lib/armeabi-v7a/libvt_custom12_H22.so->Project
+lib/armeabi-v7a/libvt_custom12_M22.so->Project
+lib/armeabi-v7a/libvt_custom15_H22.so->Project
+lib/armeabi-v7a/libvt_custom15_sP22.so->Project
+lib/armeabi-v7a/libvt_multiVoice_t.so->Project
+lib/armeabi-v7a\libc++_shared.so->Project
+lib/armeabi-v7a\libtts_jni.so->Project

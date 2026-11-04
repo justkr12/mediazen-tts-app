@@ -1,0 +1,3 @@
+D:/tts_app/app/.cxx/Debug/15a3js1b/armeabi-v7a/CMakeFiles/tts_jni.dir
+D:/tts_app/app/.cxx/Debug/15a3js1b/armeabi-v7a/CMakeFiles/edit_cache.dir
+D:/tts_app/app/.cxx/Debug/15a3js1b/armeabi-v7a/CMakeFiles/rebuild_cache.dir

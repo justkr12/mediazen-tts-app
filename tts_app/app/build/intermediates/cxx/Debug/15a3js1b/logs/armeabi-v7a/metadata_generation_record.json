@@ -1,0 +1,17 @@
+[
+{
+  "message": "Start JSON generation. Platform version: 21 min SDK version: armeabi-v7a",
+  "file": "D:\\tts_app\\app\\src\\main\\cpp\\CMakeLists.txt",
+  "tag": "debug|armeabi-v7a"
+},
+{
+  "message": "JSON \u0027D:\\tts_app\\app\\.cxx\\Debug\\15a3js1b\\armeabi-v7a\\android_gradle_build.json\u0027 was up-to-date",
+  "file": "D:\\tts_app\\app\\src\\main\\cpp\\CMakeLists.txt",
+  "tag": "debug|armeabi-v7a"
+},
+{
+  "message": "JSON generation completed without problems",
+  "file": "D:\\tts_app\\app\\src\\main\\cpp\\CMakeLists.txt",
+  "tag": "debug|armeabi-v7a"
+}
+]

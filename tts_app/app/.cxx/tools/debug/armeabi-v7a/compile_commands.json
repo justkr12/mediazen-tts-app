@@ -1,0 +1,7 @@
+[
+{
+  "directory": "D:/tts_app/app/.cxx/Debug/15a3js1b/armeabi-v7a",
+  "command": "C:\\Users\\Root\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=armv7-none-linux-androideabi21 --sysroot=C:/Users/Root/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dtts_jni_EXPORTS -ID:/tts_app/app/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -std=c++14 -fno-limit-debug-info  -fPIC -std=gnu++14 -o CMakeFiles\\tts_jni.dir\\tts_jni.cpp.o -c D:\\tts_app\\app\\src\\main\\cpp\\tts_jni.cpp",
+  "file": "D:\\tts_app\\app\\src\\main\\cpp\\tts_jni.cpp"
+}
+]
