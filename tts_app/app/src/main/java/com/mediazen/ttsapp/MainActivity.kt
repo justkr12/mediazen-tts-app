@@ -134,14 +134,8 @@ class MainActivity : AppCompatActivity() {
                 engineOpened = true
 
                 runOnUiThread { tvStatus.text = "WAV 출력 활성화: $outputPath" }
-                val retDrop = TtsEngine.ttsEngineWaveDrop(true, outputPath)
-                if (retDrop != 0) {
-                    runOnUiThread {
-                        tvStatus.text = "WAV 활성화 실패: $retDrop"
-                        setProcessing(false)
-                    }
-                    return@Thread
-                }
+                // 엔진의 tts_engine_wavedrop 반환값은 상태 코드가 아니므로(디스어셈블로 확인) 무시한다.
+                TtsEngine.ttsEngineWaveDrop(true, outputPath)
 
                 runOnUiThread { tvStatus.text = "음성 합성 중..." }
                 val retTts = TtsEngine.ttsEngineTts(0, text)
