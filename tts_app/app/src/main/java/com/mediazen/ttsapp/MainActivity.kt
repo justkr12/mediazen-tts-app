@@ -99,10 +99,8 @@ class MainActivity : AppCompatActivity() {
 
         val speakerId = if (rbCustom12.isChecked) TtsEngine.Speaker.CUSTOM12.id else TtsEngine.Speaker.CUSTOM15.id
         // ★ DB 경로: /hdtts/custom12/ (엔진이 내부적으로 /custom12/를 붙이므로 상위 폴더만)
-        val dbPath = if (speakerId == TtsEngine.Speaker.CUSTOM12.id)
-            "/storage/emulated/0/hdtts"
-        else
-            "/storage/emulated/0/hdtts"
+        // hdttsRoot: custom12/ 또는 custom15/ 의 상위 폴더
+        val dbPath = "/storage/emulated/0/hdtts"
 
         val outputPath = etOutputPath.text.toString().trim()
         if (outputPath.isEmpty()) {
@@ -123,7 +121,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 runOnUiThread { tvStatus.text = "엔진 초기화: $dbPath (speakerId=$speakerId)" }
-                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, dbPath, speakerId)
+                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, dbPath, filesDir, speakerId)
                 if (retOpen < 0) {
                     runOnUiThread {
                         tvStatus.text = "엔진 초기화 실패: $retOpen"
