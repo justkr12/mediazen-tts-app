@@ -98,9 +98,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         val speakerId = if (rbCustom12.isChecked) TtsEngine.Speaker.CUSTOM12.id else TtsEngine.Speaker.CUSTOM15.id
-        // ★ DB 경로: /hdtts/custom12/ (엔진이 내부적으로 /custom12/를 붙이므로 상위 폴더만)
-        // hdttsRoot: custom12/ 또는 custom15/ 의 상위 폴더
-        val dbPath = "/storage/emulated/0/hdtts"
+        // hdttsRoot: custom12/ 또는 custom15/ 의 상위 폴더. 엔진은 여기에
+        // data-common/, fixed_db/, userdict/ 를 붙여서 DB를 찾는다.
+        val hdttsRoot = "/storage/emulated/0/hdtts"
 
         val outputPath = etOutputPath.text.toString().trim()
         if (outputPath.isEmpty()) {
@@ -108,10 +108,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val dbDir = File(dbPath)
-        if (!dbDir.exists()) {
-            Toast.makeText(this, "보이스팩 폴더를 찾을 수 없습니다: $dbPath", Toast.LENGTH_LONG).show()
-            tvStatus.text = "폴더 없음: $dbPath"
+        val tag = if (speakerId == TtsEngine.Speaker.CUSTOM12.id) "12" else "15"
+        val packDir = File("${hdttsRoot.trimEnd('/')}/custom$tag")
+        if (!packDir.isDirectory) {
+            Toast.makeText(this, "보이스팩 폴더를 찾을 수 없습니다: ${packDir.absolutePath}", Toast.LENGTH_LONG).show()
+            tvStatus.text = "폴더 없음: ${packDir.absolutePath}"
             return
         }
 
@@ -120,11 +121,13 @@ class MainActivity : AppCompatActivity() {
 
         Thread {
             try {
-                runOnUiThread { tvStatus.text = "엔진 초기화: $dbPath (speakerId=$speakerId)" }
-                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, dbPath, filesDir, speakerId)
+                runOnUiThread { tvStatus.text = "엔진 초기화: ${packDir.absolutePath} (speakerId=$speakerId)" }
+                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, hdttsRoot, filesDir, speakerId)
                 if (retOpen < 0) {
+                    val reason = describeOpenError(retOpen)
+                    android.util.Log.e("TTS_MAIN", "open failed: $retOpen ($reason)")
                     runOnUiThread {
-                        tvStatus.text = "엔진 초기화 실패: $retOpen"
+                        tvStatus.text = "엔진 초기화 실패: $retOpen\n$reason"
                         setProcessing(false)
                     }
                     return@Thread
@@ -159,6 +162,23 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.e("TTS_MAIN", "synthesize error", e)
             }
         }.start()
+    }
+
+    /**
+     * Turns an error code from TtsDirect.open into something actionable on screen.
+     * Codes below -1000 come from our own staging code; the rest are returned by the engine.
+     */
+    private fun describeOpenError(code: Int): String = when (code) {
+        TtsDirect.ERR_NO_SOURCE_DIR ->
+            "보이스팩 폴더가 없습니다 (경로/권한 확인)"
+        TtsDirect.ERR_STAGE_FAILED ->
+            "DB 구조 준비 실패 (fixed_db/*.vtdb 누락 또는 링크/복사 실패)"
+        TtsDirect.ERR_NO_LIB ->
+            "libvt_custom*.so 와 일치하는 .vtdb 조합을 찾지 못했습니다"
+        -1000 -> "엔진 라이브러리 로드 실패 (dlopen)"
+        -1001 -> "엔진 심볼 조회 실패 (dlsym)"
+        -1002 -> "다른 엔진이 이미 로드됨 (앱 재시작 필요)"
+        else -> "엔진 오류 코드 (logcat의 TTS_DIRECT 태그 확인)"
     }
 
     private fun playWav(path: String) {

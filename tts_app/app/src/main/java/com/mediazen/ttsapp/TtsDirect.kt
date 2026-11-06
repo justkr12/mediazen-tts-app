@@ -1,5 +1,6 @@
 package com.mediazen.ttsapp
 
+import android.system.Os
 import android.util.Log
 import java.io.File
 import java.nio.charset.Charset
@@ -24,59 +25,133 @@ class TtsDirect {
         external fun nLastStatus(): Int
 
         /**
+         * Directory layout the engine builds internally from the dbPath string it is given.
+         * These are literal path fragments taken from libvt_custom12_*.so / libvt_custom15_*.so:
+         *   "fixed_db/"          + <db file>            -> speaker model
+         *   "%sdata-common/"     + <common db files>    -> common dictionaries
+         *   "userdict/userdict_kor.csv"                 -> user dictionary
+         */
+        const val DIR_DATA_COMMON = "data-common"
+        const val DIR_FIXED_DB = "fixed_db"
+        const val DIR_USERDICT = "userdict"
+        const val USERDICT_FILE = "userdict_kor.csv"
+
+        /** The speaker model file the engine looks for, e.g. tts_single_db_kor_custom12_H22.vtdb. */
+        fun vtdbName(tag: String, variant: String) = "tts_single_db_kor_custom${tag}_$variant.vtdb"
+
+        /** True when the file is the speaker model (fixed DB) rather than a common DB file. */
+        private fun isFixedDb(name: String): Boolean =
+            name.startsWith("tts_single_db_") && name.endsWith(".vtdb")
+
+        /**
          * Prepares the directory structure the engine expects under dbPath:
-         *   {dbPath}data-common/   <- all files except vtdb and userdict_kor.csv
-         *   {dbPath}fixed_db/      <- tts_single_db_kor_custom12_H22.vtdb or *_kor_custom15_*.vtdb
-         *   {dbPath}userdict_kor.csv
+         *   {dbPath}fixed_db/tts_single_db_kor_custom{tag}_{variant}.vtdb
+         *   {dbPath}data-common/            <- every other voice-pack file
+         *   {dbPath}userdict/userdict_kor.csv
          *
-         * If the source folder (srcDir) already has these subdirectories nothing is done.
-         * Otherwise a staging directory is created under stageRoot with symlinks pointing
-         * back into srcDir so no data is copied.
+         * The engine concatenates these names onto dbPath itself, so the tree must exist on
+         * disk even though the voice pack ships as a flat folder. Because the speaker model is
+         * up to ~300 MB, a staging directory of symlinks is built under stageRoot instead of
+         * copying. Symlinks are created with Files.createSymbolicLink; if the filesystem rejects
+         * them (some Android 15 app dirs and external storage mounts do) the file is copied.
+         *
+         * When srcDir already contains all three entries it is used as-is.
          *
          * Returns the dbPath to pass to the engine, or null on failure.
          */
         fun prepareDbPath(srcDir: File, stageRoot: File, tag: String): String? {
-            val dataCommon = File(srcDir, "data-common")
-            val fixedDb = File(srcDir, "fixed_db")
-            if (dataCommon.isDirectory && fixedDb.isDirectory) {
-                // Already structured correctly.
+            if (!srcDir.isDirectory) {
+                Log.e(TAG, "prepareDbPath: not a directory: $srcDir")
+                return null
+            }
+
+            // Already structured correctly: point the engine straight at the source folder.
+            if (File(srcDir, DIR_DATA_COMMON).isDirectory &&
+                File(srcDir, DIR_FIXED_DB).isDirectory &&
+                File(File(srcDir, DIR_USERDICT), USERDICT_FILE).isFile
+            ) {
+                Log.i(TAG, "prepareDbPath: $srcDir already has the expected layout")
                 return srcDir.absolutePath.trimEnd('/') + "/"
             }
 
             // Build a staging tree under stageRoot/custom{tag}/
             val stage = File(stageRoot, "custom$tag")
-            val stageCommon = File(stage, "data-common")
-            val stageFixed = File(stage, "fixed_db")
-            stageCommon.mkdirs()
-            stageFixed.mkdirs()
-
-            val vtdbSuffix = "tts_single_db_kor_custom${tag}_H22.vtdb"
-            var ok = true
-            srcDir.listFiles()?.forEach { src ->
-                val name = src.name
-                val dest: File = when {
-                    name == vtdbSuffix -> File(stageFixed, name)
-                    name == "userdict_kor.csv" -> File(stage, name)
-                    else -> File(stageCommon, name)
-                }
-                if (!dest.exists()) {
-                    try {
-                        // Symlink so no data is duplicated.
-                        val pb = ProcessBuilder("ln", "-sf", src.absolutePath, dest.absolutePath)
-                        val exitCode = pb.start().waitFor()
-                        if (exitCode != 0) {
-                            Log.w(TAG, "symlink failed for ${src.name}, copying")
-                            src.copyTo(dest, overwrite = true)
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "link/copy ${src.name}: ${e.message}")
-                        ok = false
-                    }
+            val stageCommon = File(stage, DIR_DATA_COMMON)
+            val stageFixed = File(stage, DIR_FIXED_DB)
+            val stageUserdict = File(stage, DIR_USERDICT)
+            for (d in arrayOf(stageCommon, stageFixed, stageUserdict)) {
+                if (!d.isDirectory && !d.mkdirs()) {
+                    Log.e(TAG, "prepareDbPath: cannot create ${d.absolutePath}")
+                    return null
                 }
             }
-            if (!ok) Log.w(TAG, "prepareDbPath: some files could not be linked under $stage")
+
+            var linked = 0
+            var copied = 0
+            var failed = 0
+            srcDir.listFiles()?.forEach { src ->
+                // Skip anything that is not a plain file so the staging tree stays flat.
+                if (!src.isFile) return@forEach
+
+                val name = src.name
+                val dest: File = when {
+                    isFixedDb(name) -> File(stageFixed, name)
+                    name == USERDICT_FILE -> File(stageUserdict, name)
+                    else -> File(stageCommon, name)
+                }
+
+                // Re-link when the source is newer, so a refreshed voice pack is picked up.
+                if (dest.exists() && dest.lastModified() >= src.lastModified()) return@forEach
+
+                when (linkOrCopy(src, dest)) {
+                    LinkResult.LINKED -> linked++
+                    LinkResult.COPIED -> copied++
+                    LinkResult.FAILED -> failed++
+                }
+            }
+
+            // The engine cannot start without a speaker model, so fail loudly here instead of
+            // letting it return an opaque negative code later. Any known variant is acceptable:
+            // open() picks the library whose variant matches a DB that is actually present.
+            val present = stageFixed.listFiles()?.map { it.name }?.sorted() ?: emptyList()
+            if (present.none { it == vtdbName(tag, "H22") || it == vtdbName(tag, "sP22") }) {
+                Log.e(TAG, "prepareDbPath: no tts_single_db_kor_custom${tag}_*.vtdb in " +
+                    "${stageFixed.absolutePath} (found: ${present.joinToString()})")
+                return null
+            }
+
+            Log.i(TAG, "prepareDbPath: staged $stage (linked=$linked copied=$copied failed=$failed)")
             return stage.absolutePath.trimEnd('/') + "/"
         }
+
+        private enum class LinkResult { LINKED, COPIED, FAILED }
+
+        /**
+         * Creates dest as a symlink to src, falling back to a copy when the filesystem does not
+         * allow symlinks (some external storage mounts and Android 15 app dirs reject them).
+         * Os.symlink is used rather than java.nio.file.Files so minSdk 21 stays supported.
+         */
+        private fun linkOrCopy(src: File, dest: File): LinkResult {
+            try {
+                if (dest.exists()) dest.delete()
+                Os.symlink(src.absolutePath, dest.absolutePath)
+                return LinkResult.LINKED
+            } catch (e: Exception) {
+                Log.w(TAG, "symlink failed for ${src.name} (${e.javaClass.simpleName}: ${e.message}), copying")
+            }
+            return try {
+                src.copyTo(dest, overwrite = true)
+                LinkResult.COPIED
+            } catch (e: Exception) {
+                Log.e(TAG, "copy ${src.name} failed: ${e.message}")
+                LinkResult.FAILED
+            }
+        }
+
+        /** Error codes returned by open() when it fails before reaching the engine. */
+        const val ERR_NO_SOURCE_DIR = -2000
+        const val ERR_NO_LIB = -2001
+        const val ERR_STAGE_FAILED = -2002
 
         /**
          * Loads the engine for the given speaker.
@@ -88,19 +163,29 @@ class TtsDirect {
         fun open(libDir: String, hdttsRoot: String, stageRoot: File, speakerId: Int): Int {
             val tag = if (speakerId == TtsEngine.Speaker.CUSTOM12.id) "12" else "15"
             val srcDir = File("${hdttsRoot.trimEnd('/')}/custom$tag")
-            val dbPath = prepareDbPath(srcDir, stageRoot, tag)
-            if (dbPath == null) {
-                Log.e(TAG, "prepareDbPath returned null for $srcDir")
-                return -1
+            if (!srcDir.isDirectory) {
+                Log.e(TAG, "voice pack folder not found: ${srcDir.absolutePath}")
+                return ERR_NO_SOURCE_DIR
             }
-            var ret = -1
+            val dbPath = prepareDbPath(srcDir, stageRoot, tag) ?: return ERR_STAGE_FAILED
+
+            var ret = ERR_NO_LIB
+            var tried = 0
             for (variant in LIB_VARIANTS) {
                 val lib = File(libDir, "libvt_custom${tag}_$variant.so")
                 if (!lib.exists()) continue
+                // The engine derives the fixed DB name from its own variant, so the matching
+                // .vtdb has to be present or LOADTTS fails with an opaque code.
+                if (!File(File(dbPath, DIR_FIXED_DB), vtdbName(tag, variant)).isFile) {
+                    Log.w(TAG, "skipping ${lib.name}: ${vtdbName(tag, variant)} is missing")
+                    continue
+                }
+                tried++
                 ret = nInit(lib.absolutePath, dbPath, ENGINE_ID)
                 Log.i(TAG, "open ${lib.name} db=$dbPath -> $ret")
                 if (ret >= 0) return ret
             }
+            if (tried == 0) Log.e(TAG, "no usable libvt_custom${tag}_*.so + matching .vtdb pair found")
             return ret
         }
 

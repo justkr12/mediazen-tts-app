@@ -20,6 +20,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ steps.gv.outputs.v }}
+      - name: Test dbPath layout rules
+        run: python3 tts_app/tests/test_dbpath_layout.py
+      - name: Test synthesis core
+        run: |
+          g++ -std=c++14 -Wall -Wextra -fsanitize=address,undefined \
+            -Itts_app/app/src/main/cpp tts_app/tests/test_tts_core.cpp -o /tmp/test_tts_core
+          /tmp/test_tts_core
       - name: Prepare Android SDK
         run: |
           echo "sdk.dir=$ANDROID_HOME" > tts_app/local.properties
