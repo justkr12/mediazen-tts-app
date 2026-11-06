@@ -30,6 +30,11 @@ def is_fixed_db(name):
     return name.startswith("tts_single_db_") and name.endswith(".vtdb")
 
 
+def stage_dir_name(tag):
+    """Mirror of the staged tree name used by prepareDbPath."""
+    return f"staged{tag}"
+
+
 def classify(name, tag):
     """Where prepareDbPath files a source file. tag is unused for the rule itself."""
     if is_fixed_db(name):
@@ -101,6 +106,48 @@ def main():
     # mistaken for the fixed DB (it has no "tts_single_db_" prefix + .vtdb suffix).
     assert not is_fixed_db("tts_single_db.vtdb2")
     assert is_fixed_db("tts_single_db_kor_custom12_H22.vtdb")
+
+    # The staged tree must not collide with the source pack folder, which is
+    # custom{tag}/ directly under the hdtts root.
+    assert stage_dir_name("12") != "custom12"
+    assert stage_dir_name("15") != "custom15"
+
+    # Both speakers must be stageable from the same root; their files differ only
+    # by tag and must not share a staged directory.
+    assert stage_dir_name("12") != stage_dir_name("15")
+
+    # Exact file list shipped in hdtts.zip, for both speakers.
+    hdtts12 = [
+        "Diclist_Custom12.txt", "Diclist_Custom12KAKAOHTS.txt",
+        "Diclist_Custom12LOCATION.txt", "Diclist_Custom12NAME.txt",
+        "Diclist_Custom12PHONE.txt", "Diclist_Custom12SMS.txt",
+        "HMC_LOCATION_CORPUS.cps", "HMC_POI_CORPUS.poi", "HMC_TUNED_CORPUS.cps",
+        "hts_for_navi_cityname.txt", "public_sentence_modify.txt",
+        "tts_single_db.vtdb2", "tts_single_db_kor_custom12_H22.vtdb",
+        "userdict_kor.csv",
+    ]
+    t12 = stage(hdtts12, "12")
+    assert f"{DIR_FIXED_DB}/tts_single_db_kor_custom12_H22.vtdb" in t12
+    assert f"{DIR_USERDICT}/userdict_kor.csv" in t12
+    assert f"{DIR_DATA_COMMON}/tts_single_db.vtdb2" in t12
+    assert len(t12) == len(hdtts12), "every file must be staged exactly once"
+
+    hdtts15 = [
+        "Diclist_Custom15.txt", "Diclist_Custom15KAKAO.txt",
+        "Diclist_Custom15KAKAOHTS.txt", "Diclist_Custom15LOCATION.txt",
+        "Diclist_Custom15NAME.txt", "Diclist_Custom15PHONE.txt",
+        "Diclist_Custom15SMS.txt", "HMC_LOCATION_CORPUS.cps",
+        "HMC_POI_CORPUS.poi", "HMC_TUNED_CORPUS.cps",
+        "hts_for_navi_cityname.txt", "public_sentence_modify.txt",
+        "tts_single_db.vtdb2", "tts_single_db_kor_custom15_H22.vtdb",
+        "userdict_kor.csv", "userdict_kor_HIGH_USS.csv",
+    ]
+    t15 = stage(hdtts15, "15")
+    assert f"{DIR_FIXED_DB}/tts_single_db_kor_custom15_H22.vtdb" in t15
+    assert f"{DIR_USERDICT}/userdict_kor.csv" in t15
+    assert f"{DIR_DATA_COMMON}/tts_single_db.vtdb2" in t15
+    assert f"{DIR_DATA_COMMON}/userdict_kor_HIGH_USS.csv" in t15
+    assert len(t15) == len(hdtts15), "every file must be staged exactly once"
 
     print("all dbPath layout tests passed")
     return 0

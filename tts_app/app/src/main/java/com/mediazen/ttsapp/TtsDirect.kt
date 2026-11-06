@@ -50,10 +50,10 @@ class TtsDirect {
          *   {dbPath}userdict/userdict_kor.csv
          *
          * The engine concatenates these names onto dbPath itself, so the tree must exist on
-         * disk even though the voice pack ships as a flat folder. Because the speaker model is
-         * up to ~300 MB, a staging directory of symlinks is built under stageRoot instead of
-         * copying. Symlinks are created with Files.createSymbolicLink; if the filesystem rejects
-         * them (some Android 15 app dirs and external storage mounts do) the file is copied.
+         * disk even though the voice pack ships as a flat folder. Because the pack holds a
+         * 102 MB / 302 MB vtdb2, a staging directory of symlinks is built under stageRoot
+         * instead of copying. stageRoot should sit on the same filesystem as srcDir so the
+         * links resolve; when symlinks are refused the file is copied as a fallback.
          *
          * When srcDir already contains all three entries it is used as-is.
          *
@@ -74,8 +74,9 @@ class TtsDirect {
                 return srcDir.absolutePath.trimEnd('/') + "/"
             }
 
-            // Build a staging tree under stageRoot/custom{tag}/
-            val stage = File(stageRoot, "custom$tag")
+            // Build a staging tree beside the pack, never over it: the source folder is
+            // custom{tag}/, so the staged tree gets its own name.
+            val stage = File(stageRoot, "staged$tag")
             val stageCommon = File(stage, DIR_DATA_COMMON)
             val stageFixed = File(stage, DIR_FIXED_DB)
             val stageUserdict = File(stage, DIR_USERDICT)
@@ -88,6 +89,7 @@ class TtsDirect {
 
             var linked = 0
             var copied = 0
+            var copiedBytes = 0L
             var failed = 0
             srcDir.listFiles()?.forEach { src ->
                 // Skip anything that is not a plain file so the staging tree stays flat.
@@ -105,8 +107,17 @@ class TtsDirect {
 
                 when (linkOrCopy(src, dest)) {
                     LinkResult.LINKED -> linked++
-                    LinkResult.COPIED -> copied++
+                    LinkResult.COPIED -> { copied++; copiedBytes += src.length() }
                     LinkResult.FAILED -> failed++
+                }
+            }
+
+            // A copy fallback duplicates the pack, which for the vtdb2 is 102 MB / 302 MB.
+            // Warn rather than fail: a partial pack may still be small enough to fit.
+            if (copied > 0) {
+                val free = stage.usableSpace
+                if (free in 1 until copiedBytes) {
+                    Log.w(TAG, "prepareDbPath: copied $copiedBytes bytes with only $free free on $stage")
                 }
             }
 
@@ -156,18 +167,20 @@ class TtsDirect {
         /**
          * Loads the engine for the given speaker.
          * hdttsRoot is the parent of custom12/ or custom15/ (e.g. /storage/emulated/0/hdtts).
-         * stageRoot is a writable directory for the staging symlink tree (e.g. filesDir).
+         * The staging tree is created inside hdttsRoot so it shares a filesystem with the voice
+         * pack: symlinks resolve, and the 102 MB / 302 MB vtdb2 never lands in internal storage.
          * Tries each library variant in order and returns the first non-negative LOADTTS result,
          * otherwise the last error code.
          */
-        fun open(libDir: String, hdttsRoot: String, stageRoot: File, speakerId: Int): Int {
+        fun open(libDir: String, hdttsRoot: String, speakerId: Int): Int {
             val tag = if (speakerId == TtsEngine.Speaker.CUSTOM12.id) "12" else "15"
-            val srcDir = File("${hdttsRoot.trimEnd('/')}/custom$tag")
+            val root = File(hdttsRoot)
+            val srcDir = File(root, "custom$tag")
             if (!srcDir.isDirectory) {
                 Log.e(TAG, "voice pack folder not found: ${srcDir.absolutePath}")
                 return ERR_NO_SOURCE_DIR
             }
-            val dbPath = prepareDbPath(srcDir, stageRoot, tag) ?: return ERR_STAGE_FAILED
+            val dbPath = prepareDbPath(srcDir, root, tag) ?: return ERR_STAGE_FAILED
 
             var ret = ERR_NO_LIB
             var tried = 0
