@@ -4,7 +4,7 @@ project(tts_jni LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(tts_jni SHARED tts_jni.cpp)
+add_library(tts_jni SHARED tts_jni.cpp tts_direct.cpp)
 
 # Link only against system libraries.
 # Other libraries are loaded dynamically via dlopen in tts_jni.cpp

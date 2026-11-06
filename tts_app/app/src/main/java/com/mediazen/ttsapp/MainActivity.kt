@@ -2,6 +2,8 @@ package com.mediazen.ttsapp
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -27,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
 
     private var isProcessing = false
+    private var player: MediaPlayer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,39 +121,37 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = "초기화 중..."
 
         Thread {
-            val frameSize = intArrayOf(0)
-            var engineOpened = false
-
             try {
-                runOnUiThread { tvStatus.text = "엔진 열기: $dbPath (speakerId=$speakerId)" }
-                val retOpen = TtsEngine.ttsEngineOpen(0, dbPath, speakerId, frameSize, 0)
-                if (retOpen != 0) {
+                runOnUiThread { tvStatus.text = "엔진 초기화: $dbPath (speakerId=$speakerId)" }
+                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, dbPath, speakerId)
+                if (retOpen < 0) {
                     runOnUiThread {
-                        tvStatus.text = "엔진 열기 실패: $retOpen"
+                        tvStatus.text = "엔진 초기화 실패: $retOpen"
                         setProcessing(false)
                     }
                     return@Thread
                 }
-                engineOpened = true
-
-                runOnUiThread { tvStatus.text = "WAV 출력 활성화: $outputPath" }
-                // 엔진의 tts_engine_wavedrop 반환값은 상태 코드가 아니므로(디스어셈블로 확인) 무시한다.
-                TtsEngine.ttsEngineWaveDrop(true, outputPath)
 
                 runOnUiThread { tvStatus.text = "음성 합성 중..." }
-                val retTts = TtsEngine.ttsEngineTts(0, text)
+                val wav = TtsDirect.nSynth(TtsDirect.encodeText(text))
+                if (wav == null) {
+                    val status = TtsDirect.nLastStatus()
+                    runOnUiThread {
+                        tvStatus.text = "합성 실패: $status"
+                        setProcessing(false)
+                    }
+                    return@Thread
+                }
 
-                TtsEngine.ttsEngineWaveDrop(false, outputPath)
+                val outFile = File(outputPath)
+                outFile.parentFile?.mkdirs()
+                outFile.writeBytes(wav)
 
                 runOnUiThread {
-                    tvStatus.text = if (retTts == 0)
-                        "완료: $outputPath (frameSize: ${frameSize[0]})"
-                    else
-                        "합성 실패: $retTts"
+                    tvStatus.text = "완료: $outputPath (${wav.size} bytes)"
                     setProcessing(false)
-                    if (retTts == 0) {
-                        Toast.makeText(this@MainActivity, "파일 저장됨: $outputPath", Toast.LENGTH_LONG).show()
-                    }
+                    Toast.makeText(this@MainActivity, "파일 저장됨: $outputPath", Toast.LENGTH_LONG).show()
+                    playWav(outputPath)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -158,17 +159,46 @@ class MainActivity : AppCompatActivity() {
                     setProcessing(false)
                 }
                 android.util.Log.e("TTS_MAIN", "synthesize error", e)
-            } finally {
-                if (engineOpened) {
-                    try { TtsEngine.ttsEngineClose() } catch (e: Exception) {
-                        android.util.Log.e("TTS_MAIN", "close error", e)
-                    }
-                }
             }
         }.start()
     }
 
+    private fun playWav(path: String) {
+        player?.release()
+        player = null
+        try {
+            player = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                setDataSource(path)
+                setOnCompletionListener { mp ->
+                    mp.release()
+                    if (player === mp) player = null
+                }
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            player?.release()
+            player = null
+            tvStatus.text = "재생 실패: ${e.message}"
+            android.util.Log.e("TTS_MAIN", "play error", e)
+        }
+    }
+
+    override fun onDestroy() {
+        player?.release()
+        player = null
+        super.onDestroy()
+    }
+
     private fun stopSynthesis() {
+        player?.release()
+        player = null
         TtsEngine.ttsEngineInterrupt()
         tvStatus.text = "중지 요청됨"
         setProcessing(false)
