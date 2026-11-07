@@ -112,6 +112,13 @@ def main():
     assert stage_dir_name("12") != "custom12"
     assert stage_dir_name("15") != "custom15"
 
+    # data-common/ is symlinked to the pack folder, so the engine's own relative
+    # lookups still resolve. The library's embedded build paths show the shipped
+    # layout was <base>/data-common/dict-kor/<name>, so a dict-kor/ subdirectory
+    # must be visible under data-common/ when the pack provides one.
+    assert f"{DIR_DATA_COMMON}/dict-kor/hashparams_enc" in stage(
+        ["dict-kor/hashparams_enc"], "12")
+
     # Both speakers must be stageable from the same root; their files differ only
     # by tag and must not share a staged directory.
     assert stage_dir_name("12") != stage_dir_name("15")

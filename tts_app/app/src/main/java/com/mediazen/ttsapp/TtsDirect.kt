@@ -23,9 +23,10 @@ class TtsDirect {
         // Path fragments confirmed by disassembly of CUSTOM12/15_LOADTTS and load_CommonDB:
         //   {dbPath}data-common/   <- tts_single_db.vtdb2, Diclist_*.txt, HMC_*.*, etc.
         //   {dbPath}fixed_db/      <- tts_single_db_kor_custom{tag}_{variant}.vtdb
-        //   {dbPath}userdict_kor.csv  <- directly under dbPath, no subdirectory
+        //   {dbPath}userdict/userdict_kor.csv  <- in a userdict/ subdirectory
         private const val DIR_DATA_COMMON = "data-common"
         private const val DIR_FIXED_DB = "fixed_db"
+        private const val DIR_USERDICT = "userdict"
         private const val USERDICT_FILE = "userdict_kor.csv"
 
         fun vtdbName(tag: String, variant: String) =
@@ -35,29 +36,31 @@ class TtsDirect {
             name.startsWith("tts_single_db_") && name.endsWith(".vtdb")
 
         /**
-         * Builds the directory tree the engine expects, using filesDir as the staging root.
+         * Builds the directory tree the engine expects, using a staging root beside the voice pack.
          *
          * Strategy (avoids copying the 102/302 MB vtdb2):
          *   1. stage/data-common  -> symlink pointing to srcDir (the flat custom{tag}/ folder).
          *      The engine opens files inside data-common/ by name; they all live in srcDir.
-         *   2. stage/fixed_db/    -> directory in filesDir; vtdb copied here (9 MB, manageable).
-         *   3. stage/userdict_kor.csv -> file in filesDir; tiny (5 KB), copied.
+         *   2. stage/fixed_db/    -> directory; vtdb copied here (9 MB, manageable).
+         *   3. stage/userdict/    -> directory holding userdict_kor.csv (5 KB).
          *
-         * filesDir is on the internal filesystem where symlinks are allowed.
-         * The symlink for data-common points across to external storage, which is fine because
-         * the engine only needs to open(2) the files inside it, not create them.
+         * stageRoot must sit on the same filesystem as srcDir: a symlink may not cross from
+         * internal storage (filesDir) into external storage, and when it is refused the caller
+         * would fall back to copying the whole pack. Staging beside the pack also keeps the
+         * 405 MB of voice data out of the app's internal storage.
          *
          * Returns the dbPath string to pass to nInit, or null on failure.
          */
-        fun prepareDbPath(srcDir: File, filesDir: File, tag: String): String? {
+        fun prepareDbPath(srcDir: File, stageRoot: File, tag: String): String? {
             if (!srcDir.isDirectory) {
                 Log.e(TAG, "prepareDbPath: not a directory: $srcDir")
                 return null
             }
 
-            val stage = File(filesDir, "tts_stage$tag")
+            val stage = File(stageRoot, "staged$tag")
             val stageCommonLink = File(stage, DIR_DATA_COMMON)
             val stageFixed = File(stage, DIR_FIXED_DB)
+            val stageUserdict = File(stage, DIR_USERDICT)
 
             if (!stage.isDirectory && !stage.mkdirs()) {
                 Log.e(TAG, "prepareDbPath: cannot create $stage")
@@ -65,6 +68,10 @@ class TtsDirect {
             }
             if (!stageFixed.isDirectory && !stageFixed.mkdirs()) {
                 Log.e(TAG, "prepareDbPath: cannot create $stageFixed")
+                return null
+            }
+            if (!stageUserdict.isDirectory && !stageUserdict.mkdirs()) {
+                Log.e(TAG, "prepareDbPath: cannot create $stageUserdict")
                 return null
             }
 
@@ -79,7 +86,7 @@ class TtsDirect {
                 }
             }
 
-            // fixed_db/*.vtdb: small (9 MB), copy to filesDir
+            // fixed_db/*.vtdb: small (9 MB), copied into the staged tree
             var vtdbFound = false
             for (variant in LIB_VARIANTS) {
                 val name = vtdbName(tag, variant)
@@ -102,9 +109,9 @@ class TtsDirect {
                 return null
             }
 
-            // userdict_kor.csv: tiny (5 KB), copy to filesDir
+            // userdict/userdict_kor.csv: tiny (5 KB), copied into the staged tree
             val userdictSrc = File(srcDir, USERDICT_FILE)
-            val userdictDest = File(stage, USERDICT_FILE)
+            val userdictDest = File(stageUserdict, USERDICT_FILE)
             if (userdictSrc.isFile &&
                 (!userdictDest.isFile || userdictDest.lastModified() < userdictSrc.lastModified())) {
                 try {
@@ -127,16 +134,17 @@ class TtsDirect {
         /**
          * Loads the engine for the given speaker.
          * hdttsRoot: parent of custom12/ or custom15/ (e.g. /storage/emulated/0/hdtts).
-         * filesDir: app's internal storage directory (Context.filesDir).
+         * The staging tree is created inside hdttsRoot so it shares a filesystem with the pack.
          */
-        fun open(libDir: String, hdttsRoot: String, filesDir: File, speakerId: Int): Int {
+        fun open(libDir: String, hdttsRoot: String, speakerId: Int): Int {
             val tag = if (speakerId == TtsEngine.Speaker.CUSTOM12.id) "12" else "15"
-            val srcDir = File("${hdttsRoot.trimEnd('/')}/custom$tag")
+            val root = File(hdttsRoot)
+            val srcDir = File(root, "custom$tag")
             if (!srcDir.isDirectory) {
                 Log.e(TAG, "voice pack folder not found: ${srcDir.absolutePath}")
                 return ERR_NO_SOURCE_DIR
             }
-            val dbPath = prepareDbPath(srcDir, filesDir, tag) ?: return ERR_STAGE_FAILED
+            val dbPath = prepareDbPath(srcDir, root, tag) ?: return ERR_STAGE_FAILED
 
             var ret = ERR_NO_LIB
             for (variant in LIB_VARIANTS) {
