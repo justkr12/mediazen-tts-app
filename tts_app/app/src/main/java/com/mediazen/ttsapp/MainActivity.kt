@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 runOnUiThread { tvStatus.text = "엔진 초기화: ${packDir.absolutePath} (speakerId=$speakerId)" }
-                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, hdttsRoot, speakerId)
+                val retOpen = TtsDirect.open(applicationInfo.nativeLibraryDir, hdttsRoot, filesDir, speakerId)
                 if (retOpen < 0) {
                     val reason = describeOpenError(retOpen)
                     android.util.Log.e("TTS_MAIN", "open failed: $retOpen ($reason)")
