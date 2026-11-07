@@ -61,6 +61,26 @@ static int fake_endless(const char*, void* out, int* len, int, int, int, int, in
     return 0;
 }
 
+// Trace hook: records what synth_loop observed on each call.
+static int g_trace_calls;
+static int g_trace_frame[8];
+static int g_trace_ret[8];
+static int g_trace_len[8];
+
+static void trace_hook(int frame, int ret, int len) {
+    if (g_trace_calls < 8) {
+        g_trace_frame[g_trace_calls] = frame;
+        g_trace_ret[g_trace_calls] = ret;
+        g_trace_len[g_trace_calls] = len;
+    }
+    ++g_trace_calls;
+}
+
+static void trace_reset() {
+    g_trace_calls = 0;
+    for (int i = 0; i < 8; ++i) { g_trace_frame[i] = -1; g_trace_ret[i] = 0; g_trace_len[i] = -1; }
+}
+
 static uint32_t rd32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (uint32_t(p[3]) << 24); }
 static uint16_t rd16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
 
@@ -73,6 +93,20 @@ int main() {
     assert(pcm.size() == 12);
     assert(pcm[0] == 0 && pcm[3] == 3 && pcm[4] == 16 && pcm[9] == 21 && pcm[10] == 32 && pcm[11] == 33);
     assert(g_codec_ok == 1 && g_args_ok == 1);
+
+    // The trace hook sees every call with its frame index, return value and length.
+    reset(); pcm.clear(); trace_reset();
+    r = synth_loop(fake_three, "x", pcm, trace_hook);
+    assert(r.status == kStatusOk && r.frames == 3);
+    assert(g_trace_calls == 3);
+    assert(g_trace_frame[0] == 0 && g_trace_frame[1] == 1 && g_trace_frame[2] == 2);
+    assert(g_trace_len[0] == 4 && g_trace_len[1] == 6 && g_trace_len[2] == 2);
+    assert(g_trace_ret[2] == 1);
+
+    // A null hook is accepted and changes nothing.
+    reset(); pcm.clear();
+    r = synth_loop(fake_three, "x", pcm, nullptr);
+    assert(r.status == kStatusOk && r.frames == 3 && pcm.size() == 12);
 
     reset(); pcm.clear();
     r = synth_loop(fake_error, "x", pcm);

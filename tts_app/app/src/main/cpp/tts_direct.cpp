@@ -23,6 +23,11 @@ constexpr jsize kMaxTextBytes = 2000;
 
 typedef int (*loadtts_t)(const char* db_path, const char* engine_id);
 
+// VT_GetPitchSpeedVolumePause_KOR(pitch*, speed*, volume*, pause*, speakerId).
+// Every pointer may be null to skip that value. Ranges enforced by the setter:
+// pitch 50..200, speed 0..400, volume 0..500, pause 0..65535.
+typedef int (*get_psvp_t)(int* pitch, int* speed, int* volume, int* pause, int speaker_id);
+
 std::mutex g_mutex;
 void* g_handle = nullptr;
 std::string g_loaded_lib;
@@ -78,6 +83,16 @@ Java_com_mediazen_ttsapp_TtsDirect_nInit(JNIEnv* env, jclass, jstring libPath, j
                 } else {
                     ret = g_load(db, id);
                     LOGI("LOADTTS(%s) = %d", db, ret);
+                    // Temporary diagnostic: read back the engine's current prosody settings.
+                    auto get_psvp = reinterpret_cast<get_psvp_t>(
+                        find_symbol(h, "VT_GetPitchSpeedVolumePause_KOR", "VT_GetPitchSpeedVolumePause_KOR"));
+                    if (get_psvp) {
+                        int p = -1, sp = -1, v = -1, pa = -1;
+                        int r = get_psvp(&p, &sp, &v, &pa, 82);
+                        LOGI("PSVP default: ret=%d pitch=%d speed=%d volume=%d pause=%d", r, p, sp, v, pa);
+                    } else {
+                        LOGI("PSVP: VT_GetPitchSpeedVolumePause_KOR not found");
+                    }
                     if (ret >= 0) {
                         g_handle = h;
                         g_loaded_lib = lib;
@@ -113,7 +128,10 @@ Java_com_mediazen_ttsapp_TtsDirect_nSynth(JNIEnv* env, jclass, jbyteArray text) 
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         if (!g_text) { g_last_status = kErrDlsym; return nullptr; }
-        r = ttscore::synth_loop(g_text, buf.data(), pcm);
+        r = ttscore::synth_loop(g_text, buf.data(), pcm,
+                                [](int frame, int ret, int len) {
+                                    LOGI("frame %d: ret=%d len=%d", frame, ret, len);
+                                });
         g_last_status = r.status;
     }
     LOGI("synth: %d text bytes -> %zu pcm bytes, frames=%d, last_ret=%d, status=%d",

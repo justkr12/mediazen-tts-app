@@ -41,12 +41,16 @@ struct SynthResult {
     int last_ret;  // return value of the final engine call
 };
 
+// Optional per-call trace hook, called as trace(frame_index, ret, len). Null disables it.
+typedef void (*frame_trace_t)(int frame, int ret, int len);
+
 /**
  * Calls fn repeatedly and appends each returned frame to pcm.
  * Stops when fn returns 1, a negative value, or an empty frame, or after kMaxFrames calls.
  * Success means at least one byte of PCM was produced, as in the original library.
  */
-inline SynthResult synth_loop(text_to_buffer_t fn, const char* text, std::vector<uint8_t>& pcm) {
+inline SynthResult synth_loop(text_to_buffer_t fn, const char* text, std::vector<uint8_t>& pcm,
+                              frame_trace_t trace = nullptr) {
     SynthResult r = {kStatusNoPcm, 0, 0};
     std::vector<uint8_t> buf(kFrameBufSize);
     for (int i = 0; i < kMaxFrames; ++i) {
@@ -54,6 +58,7 @@ inline SynthResult synth_loop(text_to_buffer_t fn, const char* text, std::vector
         int ret = fn(text, buf.data(), &len, kCodecPcm, 0, 0, -1, -1, -1, -1, -1, -1);
         r.frames = i + 1;
         r.last_ret = ret;
+        if (trace) trace(i, ret, len);
         if (len >= 1 && static_cast<size_t>(len) <= kFrameBufSize) {
             pcm.insert(pcm.end(), buf.begin(), buf.begin() + len);
         }
