@@ -33,7 +33,8 @@ class TtsDirect {
          */
         const val DIR_DATA_COMMON = "data-common"
         const val DIR_FIXED_DB = "fixed_db"
-        const val DIR_USERDICT = "userdict"
+        // userdict_kor.csv lives directly under dbPath, not in a subdirectory.
+        // Confirmed by CUSTOM12_LOADTTS: sprintf(path, "%s%s", dbPath, "userdict_kor.csv")
         const val USERDICT_FILE = "userdict_kor.csv"
 
         /** The speaker model file the engine looks for, e.g. tts_single_db_kor_custom12_H22.vtdb. */
@@ -44,10 +45,11 @@ class TtsDirect {
             name.startsWith("tts_single_db_") && name.endsWith(".vtdb")
 
         /**
-         * Prepares the directory structure the engine expects under dbPath:
+         * Prepares the directory structure the engine expects under dbPath.
+         * Paths confirmed by disassembling CUSTOM12_LOADTTS and load_CommonDB:
          *   {dbPath}fixed_db/tts_single_db_kor_custom{tag}_{variant}.vtdb
-         *   {dbPath}data-common/            <- every other voice-pack file
-         *   {dbPath}userdict/userdict_kor.csv
+         *   {dbPath}data-common/            <- vtdb2, Diclist_*.txt, HMC_*.cps, etc.
+         *   {dbPath}userdict_kor.csv        <- directly under dbPath, no subdirectory
          *
          * The engine concatenates these names onto dbPath itself, so the tree must exist on
          * disk even though the voice pack ships as a flat folder. Because the pack holds a
@@ -55,7 +57,7 @@ class TtsDirect {
          * instead of copying. stageRoot should sit on the same filesystem as srcDir so the
          * links resolve; when symlinks are refused the file is copied as a fallback.
          *
-         * When srcDir already contains all three entries it is used as-is.
+         * When srcDir already contains all required entries it is used as-is.
          *
          * Returns the dbPath to pass to the engine, or null on failure.
          */
@@ -68,19 +70,17 @@ class TtsDirect {
             // Already structured correctly: point the engine straight at the source folder.
             if (File(srcDir, DIR_DATA_COMMON).isDirectory &&
                 File(srcDir, DIR_FIXED_DB).isDirectory &&
-                File(File(srcDir, DIR_USERDICT), USERDICT_FILE).isFile
+                File(srcDir, USERDICT_FILE).isFile
             ) {
                 Log.i(TAG, "prepareDbPath: $srcDir already has the expected layout")
                 return srcDir.absolutePath.trimEnd('/') + "/"
             }
 
-            // Build a staging tree beside the pack, never over it: the source folder is
-            // custom{tag}/, so the staged tree gets its own name.
+            // Build a staging tree beside the pack, never over it.
             val stage = File(stageRoot, "staged$tag")
             val stageCommon = File(stage, DIR_DATA_COMMON)
             val stageFixed = File(stage, DIR_FIXED_DB)
-            val stageUserdict = File(stage, DIR_USERDICT)
-            for (d in arrayOf(stageCommon, stageFixed, stageUserdict)) {
+            for (d in arrayOf(stageCommon, stageFixed)) {
                 if (!d.isDirectory && !d.mkdirs()) {
                     Log.e(TAG, "prepareDbPath: cannot create ${d.absolutePath}")
                     return null
@@ -98,7 +98,8 @@ class TtsDirect {
                 val name = src.name
                 val dest: File = when {
                     isFixedDb(name) -> File(stageFixed, name)
-                    name == USERDICT_FILE -> File(stageUserdict, name)
+                    // userdict_kor.csv goes directly under stage/, not in a subdirectory.
+                    name == USERDICT_FILE -> File(stage, name)
                     else -> File(stageCommon, name)
                 }
 
