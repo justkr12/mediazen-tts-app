@@ -21,9 +21,17 @@ constexpr size_t kWavHeaderSize = 44;
 constexpr int kStatusOk = 0;
 constexpr int kStatusNoPcm = -2;
 
-// CUSTOMxx_TextToBuffer: (text, out, &out_len, continue_flag, 0, 0, -1 x 6).
+// Output codec selector: the 4th argument indexes a jump table in VT_TextToBuffer_KOR
+// (libvt_custom1x_H22.so, tbb at 0x17d64). Only 3 selects raw PCM.
+//   0 = TextToDialogicAdpcmBuffer_COMMON
+//   1 = TextToMulawPcmBuffer_COMMON
+//   2 = TextToAlawPcmBuffer_COMMON
+//   3 = TextToPcmBuffer_COMMON
+constexpr int kCodecPcm = 3;
+
+// CUSTOMxx_TextToBuffer: (text, out, &out_len, codec, 0, 0, -1 x 6).
 // Return value: 1 on the last frame, 0 when more frames follow, negative on error.
-typedef int (*text_to_buffer_t)(const char* text, void* out, int* out_len, int cont,
+typedef int (*text_to_buffer_t)(const char* text, void* out, int* out_len, int codec,
                                 int a4, int a5, int a6, int a7, int a8,
                                 int a9, int a10, int a11);
 
@@ -41,16 +49,14 @@ struct SynthResult {
 inline SynthResult synth_loop(text_to_buffer_t fn, const char* text, std::vector<uint8_t>& pcm) {
     SynthResult r = {kStatusNoPcm, 0, 0};
     std::vector<uint8_t> buf(kFrameBufSize);
-    int cont = 0;
     for (int i = 0; i < kMaxFrames; ++i) {
         int len = 0;
-        int ret = fn(text, buf.data(), &len, cont, 0, 0, -1, -1, -1, -1, -1, -1);
+        int ret = fn(text, buf.data(), &len, kCodecPcm, 0, 0, -1, -1, -1, -1, -1, -1);
         r.frames = i + 1;
         r.last_ret = ret;
         if (len >= 1 && static_cast<size_t>(len) <= kFrameBufSize) {
             pcm.insert(pcm.end(), buf.begin(), buf.begin() + len);
         }
-        cont = 1;
         if (ret == 1 || ret < 0 || len < 1) break;
     }
     if (!pcm.empty()) {
