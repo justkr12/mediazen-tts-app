@@ -84,6 +84,54 @@ static void trace_reset() {
 static uint32_t rd32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (uint32_t(p[3]) << 24); }
 static uint16_t rd16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
 
+// CUSTOMxx_LOADTTS takes exactly three arguments. Passing only two would leave the version slot
+// holding whatever the previous dlsym call left in r1, which the engine compares against its
+// embedded literal and rejects with -300 (libvt_custom12_H22.so 0x177d6 -> 0x1783e).
+static char g_load_db[64];
+static char g_load_ver[64];
+static char g_load_prefix[64];
+static int g_load_calls;
+
+static int fake_load(const char* db, const char* ver, const char* prefix) {
+    ++g_load_calls;
+    std::snprintf(g_load_db, sizeof(g_load_db), "%s", db ? db : "(null)");
+    std::snprintf(g_load_ver, sizeof(g_load_ver), "%s", ver ? ver : "(null)");
+    std::snprintf(g_load_prefix, sizeof(g_load_prefix), "%s", prefix ? prefix : "(null)");
+    // Mirrors the engine: a version that does not match the embedded literal fails with -300.
+    return std::strcmp(ver ? ver : "", kEngineVersion) == 0 ? 0 : kLoadTtsVersionMismatch;
+}
+
+static void test_loadtts_contract() {
+    // The declared typedef must accept three arguments; this fails to compile otherwise.
+    loadtts_t fn = fake_load;
+    g_load_calls = 0;
+    int ret = fn("/data/staged12/", kEngineVersion, kUserDictPrefix);
+    assert(g_load_calls == 1);
+    assert(ret == 0);
+    assert(std::strcmp(g_load_db, "/data/staged12/") == 0);
+    assert(std::strcmp(g_load_ver, kEngineVersion) == 0);
+    assert(std::strcmp(g_load_prefix, kUserDictPrefix) == 0);
+
+    // The engine does sprintf(db_path, "%s%s", arg3, "userdict_kor.csv") at 0x1780e-0x17814,
+    // so the file it opens is db_path + arg3 + kUserDictFileName.
+    assert(std::strcmp(kUserDictPrefix, "userdict/") == 0);
+    assert(std::strcmp(kUserDictFileName, "userdict_kor.csv") == 0);
+    char composed[128];
+    std::snprintf(composed, sizeof(composed), "%s%s%s", "/data/staged12/", kUserDictPrefix,
+                  kUserDictFileName);
+    assert(std::strcmp(composed, "/data/staged12/userdict/userdict_kor.csv") == 0);
+
+    // The version constant must be the exact rodata literal, byte for byte.
+    assert(std::strlen(kEngineVersion) == 34);
+    assert(std::strcmp(kEngineVersion, "TTS.KOK.L-NRv24.101.240603-L2voice") == 0);
+
+    // Any other value in the version slot is rejected by the engine with -300.
+    assert(fn("/data/staged12/", "TTS.KOK.L-NRv24.101.240603-L2voice ", "") == kLoadTtsVersionMismatch);
+    assert(fn("/data/staged12/", "", "") == kLoadTtsVersionMismatch);
+    assert(fn("/data/staged12/", "/data/staged12/", "") == kLoadTtsVersionMismatch);
+    assert(kLoadTtsVersionMismatch == -300);
+}
+
 int main() {
     std::vector<uint8_t> pcm;
 
@@ -132,6 +180,8 @@ int main() {
     assert(rd32(h + 24) == 22050 && rd32(h + 28) == 44100);
     assert(rd16(h + 32) == 2 && rd16(h + 34) == 16);
     assert(std::memcmp(h + 36, "data", 4) == 0 && rd32(h + 40) == 1000);
+
+    test_loadtts_contract();
 
     std::puts("all tests passed");
     return 0;

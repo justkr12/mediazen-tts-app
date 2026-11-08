@@ -29,6 +29,31 @@ constexpr int kStatusNoPcm = -2;
 //   3 = TextToPcmBuffer_COMMON
 constexpr int kCodecPcm = 3;
 
+// CUSTOMxx_LOADTTS(db_path, version, user_dict_prefix) - three arguments.
+// Confirmed from libvt_custom12_H22.so at 0x177a4:
+//   177b0 mov r6,r0 ; 177f6 mov r2,r6 ; 177f8 bl VT_LOADTTS_EXT_KOR -> arg1 is the dbPath
+//   177d0 mov r1,r7 ; 177d6 bl compare_str_IgnoreWhiteSpace          -> arg2 must equal the
+//                                                                      version literal below
+//   1780e mov r0,r6 ; 17810 add r1,pc ("%s%s") ; 1780c mov r2,r8 (arg3)
+//   17812 add r3,pc ("userdict_kor.csv") ; 17814 blx sprintf
+//   17826 mov r1,r6 ; 1782a bl VT_LOAD_UserDict_KOR
+// arg2 is compared against a rodata literal and a mismatch returns -300 from 0x1783e.
+// sprintf writes into arg1, so the user-dict path is exactly db_path + arg3 + "userdict_kor.csv".
+// The version literal below is the one stored at rodata 0x5d38c in both the custom12 and
+// custom15 H22 libraries.
+constexpr char kEngineVersion[] = "TTS.KOK.L-NRv24.101.240603-L2voice";
+
+// Appended between the staged dbPath and "userdict_kor.csv". The voice packs ship the file as
+// <db>/userdict/userdict_kor.csv, so the staged root must expose that same subdirectory.
+constexpr char kUserDictPrefix[] = "userdict/";
+
+constexpr char kUserDictFileName[] = "userdict_kor.csv";
+
+// Returned by CUSTOMxx_LOADTTS when arg2 does not match the embedded version literal.
+constexpr int kLoadTtsVersionMismatch = -300;
+
+typedef int (*loadtts_t)(const char* db_path, const char* version, const char* user_dict_prefix);
+
 // CUSTOMxx_TextToBuffer: (text, out, &out_len, codec, 0, 0, -1 x 6).
 // Return value: 1 on the last frame, 0 when more frames follow, negative on error.
 typedef int (*text_to_buffer_t)(const char* text, void* out, int* out_len, int codec,

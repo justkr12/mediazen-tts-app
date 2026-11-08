@@ -1,6 +1,9 @@
 // Direct driver for libvt_custom12_*.so / libvt_custom15_*.so.
 // The sequence (dlopen, dlsym CUSTOMxx_*, LOADTTS, TextToBuffer loop) follows libhkport.so
 // in HKMC.apk. libvt_multiVoice_t.so and libtts_module.so are not used on this path.
+// Note that libhkport.so is a reference for the sequence only, not for the LOADTTS arguments:
+// it is ARM mode and leaves r1/r2 holding dlsym leftovers, so its own call fails with -300.
+// The argument convention below was taken from the engine's own disassembly.
 #include <jni.h>
 #include <dlfcn.h>
 #include <mutex>
@@ -21,17 +24,10 @@ constexpr jint kErrDlsym = -1001;
 constexpr jint kErrOtherEngineLoaded = -1002;
 constexpr jsize kMaxTextBytes = 2000;
 
-typedef int (*loadtts_t)(const char* db_path, const char* engine_id);
-
-// VT_GetPitchSpeedVolumePause_KOR(pitch*, speed*, volume*, pause*, speakerId).
-// Every pointer may be null to skip that value. Ranges enforced by the setter:
-// pitch 50..200, speed 0..400, volume 0..500, pause 0..65535.
-typedef int (*get_psvp_t)(int* pitch, int* speed, int* volume, int* pause, int speaker_id);
-
 std::mutex g_mutex;
 void* g_handle = nullptr;
 std::string g_loaded_lib;
-loadtts_t g_load = nullptr;
+ttscore::loadtts_t g_load = nullptr;
 ttscore::text_to_buffer_t g_text = nullptr;
 int g_last_status = 0;
 
@@ -71,7 +67,8 @@ Java_com_mediazen_ttsapp_TtsDirect_nInit(JNIEnv* env, jclass, jstring libPath, j
                 LOGE("dlopen %s: %s", lib, dlerror());
                 ret = kErrDlopen;
             } else {
-                g_load = reinterpret_cast<loadtts_t>(find_symbol(h, "CUSTOM12_LOADTTS", "CUSTOM15_LOADTTS"));
+                g_load = reinterpret_cast<ttscore::loadtts_t>(
+                    find_symbol(h, "CUSTOM12_LOADTTS", "CUSTOM15_LOADTTS"));
                 g_text = reinterpret_cast<ttscore::text_to_buffer_t>(
                     find_symbol(h, "CUSTOM12_TextToBuffer", "CUSTOM15_TextToBuffer"));
                 if (!g_load || !g_text) {
@@ -81,22 +78,19 @@ Java_com_mediazen_ttsapp_TtsDirect_nInit(JNIEnv* env, jclass, jstring libPath, j
                     reset_state();
                     ret = kErrDlsym;
                 } else {
-                    ret = g_load(db, id);
+                    // engineId is not an argument of LOADTTS: the speaker id is hardcoded to 82
+                    // (0x177ea) and the version string is compared against a rodata literal.
+                    // arg3 is spliced between dbPath and "userdict_kor.csv", so the engine opens
+                    // exactly <dbPath>/userdict/userdict_kor.csv.
+                    ret = g_load(db, ttscore::kEngineVersion, ttscore::kUserDictPrefix);
                     LOGI("LOADTTS(%s) = %d", db, ret);
-                    // Temporary diagnostic: read back the engine's current prosody settings.
-                    auto get_psvp = reinterpret_cast<get_psvp_t>(
-                        find_symbol(h, "VT_GetPitchSpeedVolumePause_KOR", "VT_GetPitchSpeedVolumePause_KOR"));
-                    if (get_psvp) {
-                        int p = -1, sp = -1, v = -1, pa = -1;
-                        int r = get_psvp(&p, &sp, &v, &pa, 82);
-                        LOGI("PSVP default: ret=%d pitch=%d speed=%d volume=%d pause=%d", r, p, sp, v, pa);
-                    } else {
-                        LOGI("PSVP: VT_GetPitchSpeedVolumePause_KOR not found");
-                    }
-                    if (ret >= 0) {
+                    if (ret == 0) {
                         g_handle = h;
                         g_loaded_lib = lib;
                     } else {
+                        // -300 means arg2 did not match the version literal embedded in the
+                        // library; any other value is a load failure inside VT_LOADTTS_EXT_KOR.
+                        LOGE("LOADTTS failed (%d) for %s", ret, db);
                         g_handle = h;
                         reset_state();
                     }
@@ -128,10 +122,7 @@ Java_com_mediazen_ttsapp_TtsDirect_nSynth(JNIEnv* env, jclass, jbyteArray text) 
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         if (!g_text) { g_last_status = kErrDlsym; return nullptr; }
-        r = ttscore::synth_loop(g_text, buf.data(), pcm,
-                                [](int frame, int ret, int len) {
-                                    LOGI("frame %d: ret=%d len=%d", frame, ret, len);
-                                });
+        r = ttscore::synth_loop(g_text, buf.data(), pcm);
         g_last_status = r.status;
     }
     LOGI("synth: %d text bytes -> %zu pcm bytes, frames=%d, last_ret=%d, status=%d",
