@@ -3,7 +3,9 @@ package com.mediazen.ttsapp
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.MediaPlayer
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -29,7 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
 
     private var isProcessing = false
-    private var player: MediaPlayer? = null
+    private var audioTrack: AudioTrack? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -134,8 +136,9 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 runOnUiThread { tvStatus.text = "음성 합성 중..." }
-                val wav = TtsDirect.nSynth(TtsDirect.encodeText(text))
-                if (wav == null) {
+                // Pass -1,-1,-1 as the last three engine arguments (confirmed from HKMC_Navi5W_phone.apk).
+                val pcm = TtsDirect.nSynth(TtsDirect.encodeText(text), -1, -1, -1)
+                if (pcm == null) {
                     val status = TtsDirect.nLastStatus()
                     runOnUiThread {
                         tvStatus.text = "합성 실패: $status"
@@ -144,15 +147,20 @@ class MainActivity : AppCompatActivity() {
                     return@Thread
                 }
 
-                val outFile = File(outputPath)
-                outFile.parentFile?.mkdirs()
-                outFile.writeBytes(wav)
+                // Play raw PCM via AudioTrack (22050 Hz, mono, PCM_16BIT, MODE_STATIC).
+                // Also save WAV to outputPath for inspection.
+                try {
+                    val outFile = File(outputPath)
+                    outFile.parentFile?.mkdirs()
+                    outFile.writeBytes(buildWavHeader(pcm.size) + pcm)
+                } catch (e: Exception) {
+                    android.util.Log.w("TTS_MAIN", "wav save failed: ${e.message}")
+                }
 
                 runOnUiThread {
-                    tvStatus.text = "완료: $outputPath (${wav.size} bytes)"
+                    tvStatus.text = "완료: ${pcm.size} bytes PCM"
                     setProcessing(false)
-                    Toast.makeText(this@MainActivity, "파일 저장됨: $outputPath", Toast.LENGTH_LONG).show()
-                    playWav(outputPath)
+                    playPcm(pcm)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -181,42 +189,65 @@ class MainActivity : AppCompatActivity() {
         else -> "엔진 오류 코드 (logcat의 TTS_DIRECT 태그 확인)"
     }
 
-    private fun playWav(path: String) {
-        player?.release()
-        player = null
+    // Plays raw 22050 Hz mono 16-bit PCM bytes directly via AudioTrack (MODE_STATIC).
+    // Matches the play() method in com.hkport.Vt from HKMC_Navi5W_phone.apk.
+    private fun playPcm(pcm: ByteArray) {
+        audioTrack?.stop()
+        audioTrack?.release()
+        audioTrack = null
         try {
-            player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                setDataSource(path)
-                setOnCompletionListener { mp ->
-                    mp.release()
-                    if (player === mp) player = null
-                }
-                prepare()
-                start()
-            }
+            val attrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            val format = AudioFormat.Builder()
+                .setSampleRate(22050)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build()
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(attrs)
+                .setAudioFormat(format)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(pcm.size)
+                .build()
+            track.write(pcm, 0, pcm.size)
+            audioTrack = track
+            track.play()
         } catch (e: Exception) {
-            player?.release()
-            player = null
+            android.util.Log.e("TTS_MAIN", "playPcm error", e)
             tvStatus.text = "재생 실패: ${e.message}"
-            android.util.Log.e("TTS_MAIN", "play error", e)
         }
     }
 
+    // Builds a minimal 44-byte WAV header for 22050 Hz mono 16-bit PCM.
+    private fun buildWavHeader(pcmSize: Int): ByteArray {
+        val h = ByteArray(44)
+        fun le32(v: Int, o: Int) { for (i in 0..3) h[o+i] = (v shr (i*8)).toByte() }
+        fun le16(v: Int, o: Int) { h[o] = (v and 0xff).toByte(); h[o+1] = (v shr 8).toByte() }
+        "RIFF".toByteArray().copyInto(h, 0)
+        le32(36 + pcmSize, 4)
+        "WAVEfmt ".toByteArray().copyInto(h, 8)
+        le32(16, 16); le16(1, 20); le16(1, 22); le32(22050, 24)
+        le32(44100, 28); le16(2, 32); le16(16, 34)
+        "data".toByteArray().copyInto(h, 36)
+        le32(pcmSize, 40)
+        return h
+    }
+
     override fun onDestroy() {
-        player?.release()
-        player = null
+        audioTrack?.stop()
+        audioTrack?.release()
+        audioTrack = null
         super.onDestroy()
     }
 
     private fun stopSynthesis() {
-        player?.release()
-        player = null
+        audioTrack?.pause()
+        audioTrack?.flush()
+        audioTrack?.stop()
+        audioTrack?.release()
+        audioTrack = null
         TtsEngine.ttsEngineInterrupt()
         tvStatus.text = "중지 요청됨"
         setProcessing(false)

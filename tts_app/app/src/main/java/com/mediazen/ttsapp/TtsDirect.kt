@@ -17,7 +17,9 @@ class TtsDirect {
         }
 
         @JvmStatic external fun nInit(libPath: String, dbPath: String, engineId: String): Int
-        @JvmStatic external fun nSynth(textCp949: ByteArray): ByteArray?
+        // a0/a1/a2 are passed as the last three int arguments to TextToBuffer.
+        // Use -1 to let the engine apply its defaults (confirmed from HKMC_Navi5W_phone.apk).
+        @JvmStatic external fun nSynth(textCp949: ByteArray, a0: Int, a1: Int, a2: Int): ByteArray?
         @JvmStatic external fun nLastStatus(): Int
 
         // Path fragments confirmed by disassembly of CUSTOM12/15_LOADTTS and load_CommonDB:
